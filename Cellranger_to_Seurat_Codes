@@ -1,0 +1,15 @@
+The Poché Lab Single Cell Pipeline
+
+Obtain raw data from 10x single cell experiment. 
+
+Preform cellranger mkfastq creat fastq files from raw datasets. 
+cellranger mkfastq --id=tiny-bcl --run=/path/to/tiny_bcl --csv=cellranger-tiny-bcl-simple-1.2.0.csv
+
+Preform cellranger counts funtion to count the number of each gene present within each cell from the experiment.
+cellranger count --id=210901_NB501771_0546_AHML7MBGXJ_counts --transcriptome=yard/apps/cellranger-6.0.1/refdata-gex-mm10-2020-A --fastqs=yard/cell_ranger_mkfastq/210901_NB501771_0546_AHML7MBGXJ/210901_NB501771_0546_AHML7MBGXJ/outs/fastq_path --sample=AHML7MBGXJ
+
+Creat seurat object from counts data obtained from cellranger counts.
+
+
+If you need to creat or add genes to your referance view the code below and run before cellranger counts. This gives the opertunity to add specific genes to the dataset that might be labeled as unidentified. This has some limited applications if genes are already present. Before running the the cellranger mkref you need to alter the exsiting genom that you are using matching the file format. 
+cellranger mkref --genome=Mus_musculus_genome_GFP_tdTWPRE_GMNN --fasta=Mus_musculus.GRCm39.dna_sm.primary_assembly.GFP_GMNN_tdTWPRE.fa --genes=Mus_musculus.GRCm39.105.filtered_GFP_GMNN_tdTWPRE.gtf
