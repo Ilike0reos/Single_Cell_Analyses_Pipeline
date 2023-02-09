@@ -120,127 +120,7 @@ Uninjured_AHWN2VBGXC_Trial <- subset(Uninjured_AHWN2VBGXC_Trial, subset = nFeatu
 Uninjured_AHWN2VBGXC_Trial_QC <- Uninjured_AHWN2VBGXC_Trial
 ```
 
-Violin plots to visualize the removal of outlines and unstable cells.
-
-```{r}
-plot1 <- FeatureScatter(Uninjured_AHWN2VBGXC_Trial, feature1 = "nCount_RNA", feature2 = "percent.mt")
-plot2 <- FeatureScatter(Uninjured_AHWN2VBGXC_Trial, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
-plot1 + plot2
-```
-
-```{r}
-VlnPlot(Uninjured_AHWN2VBGXC_Trial, features = c("nFeature_RNA", "nCount_RNA"), ncol = 3)
-VlnPlot(Uninjured_AHWN2VBGXC_Trial, features = c("percent.mt", "log10GenesPerUMI"), ncol = 3)
-```
-
-During this step the three data sets are normalize and the variable features for each data set are identified independently. This set is done to properly integrate the three data sets together by identifying repeatedly variable features across data sets.This starts with running principal component analysis or PCA on the scaled dataset using the variable features. The calculated PC are then represented with different graphical features such as JackStraw and Elbow plots to estimate an appropriate PC to remove technical noise from the dataset.
-
-```{r}
-Uninjured_AHWN2VBGXC_Trial <- NormalizeData(Uninjured_AHWN2VBGXC_Trial, normalization.method = "LogNormalize", scale.factor = 10000)
-Uninjured_AHWN2VBGXC_Trial <- FindVariableFeatures(Uninjured_AHWN2VBGXC_Trial, selection.method = "vst", nfeatures = 2000)
-Uninjured_AHWN2VBGXC_Trial <- ScaleData(Uninjured_AHWN2VBGXC_Trial, verbose = FALSE)
-Uninjured_AHWN2VBGXC_Trial <- RunPCA(Uninjured_AHWN2VBGXC_Trial, npcs = 30, verbose = FALSE)
-```
-
-JackStraw provides a graphic to compare the distribution of p-values for the PCs represented. This can be used to see significant drop offs of the PCs that shows strong enrichment of features with low p-values.An alternate method or a method that can be used in tandem to the JackStraw method is the elbow plot. The elbow plot ranks the PCs based on the percentage of variance explained by each one. The PC can then be chosen based on the "elbow" seen within the plot and leaning towards the higher side of the range that is chosen. There are also separate packages outside of Seurat that can be used to estimate the dimensionality of the dataset. This can be seen here using that R package intrinsicDimension to estimate an appropriate PC.
-
-```{r}
-#Test the dimensionality
-intrinsicDimension::maxLikGlobalDimEst(Uninjured_AHWN2VBGXC_Trial@reductions$pca@cell.embeddings, k = 10)
-Uninjured_AHWN2VBGXC_Trial <- JackStraw(Uninjured_AHWN2VBGXC_Trial, num.replicate = 100)
-Uninjured_AHWN2VBGXC_Trial <- ScoreJackStraw(Uninjured_AHWN2VBGXC_Trial, dims = 1:20)
-```
-
-```{r}
-JackStrawPlot(Uninjured_AHWN2VBGXC_Trial, dims = 1:20)
-ElbowPlot(Uninjured_AHWN2VBGXC_Trial)
-```
-
-After deciding on the PC the Uniform Manifold Approximation and Projection is run as a dimensional reduction technique. Afterwards run the FindNeighbors function to compute the k.param nearest neighbors. Using the Waltman and van Eck algorithms calculate the clusters from the calculated nearest neighbors.
-
-```{r}
-Uninjured_AHWN2VBGXC_Trial <- RunUMAP(Uninjured_AHWN2VBGXC_Trial, reduction = "pca", dims = 1:14)
-Uninjured_AHWN2VBGXC_Trial <- FindNeighbors(Uninjured_AHWN2VBGXC_Trial, reduction = "pca", dims = 1:14)
-Uninjured_AHWN2VBGXC_Trial <- FindClusters(Uninjured_AHWN2VBGXC_Trial, resolution = 0.5)
-```
-
-Visualizing the clustering and original identities of the data.
-
-```{r}
-p1 <- DimPlot(Uninjured_AHWN2VBGXC_Trial, reduction = "umap", group.by = "orig.ident")
-p2 <- DimPlot(Uninjured_AHWN2VBGXC_Trial, reduction = "umap", label = TRUE, repel = TRUE)
-p1 + p2
-```
-
-Removal of contamination using gene markers that of known cell contaminators. Violin plots provides a graphic of which clusters contain the gene markers. 
-
-```{r}
-VlnPlot(object = Uninjured_AHWN2VBGXC_Trial, features =c("S100b", "Pecam1", "Gnat2", "Csf1r", "Gnat1", "Pcp2"))
-VlnPlot(object = Uninjured_AHWN2VBGXC_Trial, features =c("Rho", "Rom1"))
-```
-
-Subset out the clusters that are associated with higher concentrations of the gene markers. Subset cells that contain a combination of gene markers that are associated with the contamination.
-
-```{r}
-Uninjured_AHWN2VBGXC_Trial_Removal <- subset(Uninjured_AHWN2VBGXC_Trial, idents = c(5), invert = TRUE)
-Uninjured_AHWN2VBGXC_Trial_Removal <- subset(Uninjured_AHWN2VBGXC_Trial_Removal, subset = Rho > 0 & Gnat1 > 0, invert = TRUE)
-```
-
-Re-analyze and re-cluster the remaining cells after the removal of contamination.
-
-```{r}
-Uninjured_AHWN2VBGXC_Trial_Removal <- NormalizeData(Uninjured_AHWN2VBGXC_Trial_Removal, normalization.method = "LogNormalize", scale.factor = 10000)
-Uninjured_AHWN2VBGXC_Trial_Removal <- FindVariableFeatures(Uninjured_AHWN2VBGXC_Trial_Removal, selection.method = "vst", nfeatures = 2000)
-Uninjured_AHWN2VBGXC_Trial_Removal <- ScaleData(Uninjured_AHWN2VBGXC_Trial_Removal, verbose = FALSE)
-Uninjured_AHWN2VBGXC_Trial_Removal <- RunPCA(Uninjured_AHWN2VBGXC_Trial_Removal, npcs = 30, verbose = FALSE)
-```
-
-```{r}
-#Test the dimensionality
-intrinsicDimension::maxLikGlobalDimEst(Uninjured_AHWN2VBGXC_Trial_Removal@reductions$pca@cell.embeddings, k = 10)
-```
-
-```{r}
-Uninjured_AHWN2VBGXC_Trial_Removal <- RunUMAP(Uninjured_AHWN2VBGXC_Trial_Removal, reduction = "pca", dims = 1:16)
-Uninjured_AHWN2VBGXC_Trial_Removal <- FindNeighbors(Uninjured_AHWN2VBGXC_Trial_Removal, reduction = "pca", dims = 1:16)
-Uninjured_AHWN2VBGXC_Trial_Removal <- FindClusters(Uninjured_AHWN2VBGXC_Trial_Removal, resolution = 0.5)
-```
-
-```{r}
-# Visualization
-p1 <- DimPlot(Uninjured_AHWN2VBGXC_Trial_Removal, reduction = "umap", group.by = "orig.ident")
-p2 <- DimPlot(Uninjured_AHWN2VBGXC_Trial_Removal, reduction = "umap", label = TRUE, repel = TRUE)
-p1 + p2
-```
-
-Check the re-analyze clustering to insure removal of known contamination. 
-
-```{r}
-VlnPlot(object = Uninjured_AHWN2VBGXC_Trial_Removal, features =c("S100b", "Pecam1", "Gnat2", "Csf1r", "Gnat1", "Pcp2"))
-VlnPlot(object = Uninjured_AHWN2VBGXC_Trial_Removal, features =c("Rho", "Rom1"))
-```
-
-
-
-```{r}
-Uninjured_AHWN2VBGXC_Trial_Removal.markers <- FindAllMarkers(Uninjured_AHWN2VBGXC_Trial_Removal, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-```
-
-```{r}
-Uninjured_AHWN2VBGXC_Trial_Removal.markers %>%
-  group_by(cluster) %>%
-  top_n(n = 5, wt = avg_log2FC)
-```
-
-```{r}
-s.genes <- cc.genes$s.genes
-g2m.genes <- cc.genes$g2m.genes
-Uninjured_AHWN2VBGXC_Trial_Removal <- CellCycleScoring(Uninjured_AHWN2VBGXC_Trial_Removal, g2m.features = g2m.genes, s.features = s.genes, set.ident = TRUE)
-# Visualization
-p1 <- DimPlot(Uninjured_AHWN2VBGXC_Trial_Removal, reduction = "umap", group.by = "Phase")
-p2 <- DimPlot(Uninjured_AHWN2VBGXC_Trial_Removal, reduction = "umap", label = TRUE, repel = TRUE)
-p1 + p2
-```
+Preform QC for all available datasets.
 
 ## Sample AHV2F2BGXB, taken 20/06/09
 
@@ -321,139 +201,6 @@ Injured_AHV2F2BGXB_Trial <- subset(Injured_AHV2F2BGXB_Trial, subset = nFeature_R
 Injured_AHV2F2BGXB_Trial_QC <- Injured_AHV2F2BGXB_Trial
 ```
 
-```{r}
-plot1 <- FeatureScatter(Injured_AHV2F2BGXB_Trial, feature1 = "nCount_RNA", feature2 = "percent.mt")
-plot2 <- FeatureScatter(Injured_AHV2F2BGXB_Trial, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
-plot1 + plot2
-```
-
-```{r}
-VlnPlot(Injured_AHV2F2BGXB_Trial, features = c("nFeature_RNA", "nCount_RNA"), ncol = 3)
-VlnPlot(Injured_AHV2F2BGXB_Trial, features = c("percent.mt", "log10GenesPerUMI"), ncol = 3)
-```
-
-```{r}
-Injured_AHV2F2BGXB_Trial <- NormalizeData(Injured_AHV2F2BGXB_Trial, normalization.method = "LogNormalize", scale.factor = 10000)
-Injured_AHV2F2BGXB_Trial <- FindVariableFeatures(Injured_AHV2F2BGXB_Trial, selection.method = "vst", nfeatures = 2000)
-Injured_AHV2F2BGXB_Trial <- ScaleData(Injured_AHV2F2BGXB_Trial, verbose = FALSE)
-Injured_AHV2F2BGXB_Trial <- RunPCA(Injured_AHV2F2BGXB_Trial, npcs = 30, verbose = FALSE)
-```
-
-```{r}
-#Test the dimensionality
-intrinsicDimension::maxLikGlobalDimEst(Injured_AHV2F2BGXB_Trial@reductions$pca@cell.embeddings, k = 10)
-Injured_AHV2F2BGXB_Trial <- JackStraw(Injured_AHV2F2BGXB_Trial, num.replicate = 100)
-Injured_AHV2F2BGXB_Trial <- ScoreJackStraw(Injured_AHV2F2BGXB_Trial, dims = 1:20)
-```
-
-```{r}
-JackStrawPlot(Injured_AHV2F2BGXB_Trial, dims = 1:20)
-ElbowPlot(Injured_AHV2F2BGXB_Trial)
-```
-
-```{r}
-Injured_AHV2F2BGXB_Trial <- RunUMAP(Injured_AHV2F2BGXB_Trial, reduction = "pca", dims = 1:15)
-Injured_AHV2F2BGXB_Trial <- FindNeighbors(Injured_AHV2F2BGXB_Trial, reduction = "pca", dims = 1:15)
-Injured_AHV2F2BGXB_Trial <- FindClusters(Injured_AHV2F2BGXB_Trial, resolution = 0.5)
-```
-
-```{r}
-# Visualization
-p1 <- DimPlot(Injured_AHV2F2BGXB_Trial, reduction = "umap", group.by = "orig.ident")
-p2 <- DimPlot(Injured_AHV2F2BGXB_Trial, reduction = "umap", label = TRUE, repel = TRUE)
-p1 + p2
-```
-
-```{r}
-VlnPlot(object = Injured_AHV2F2BGXB_Trial, features =c("S100b", "Pecam1", "Gnat2", "Csf1r", "Gnat1", "Pcp2"))
-VlnPlot(object = Injured_AHV2F2BGXB_Trial, features =c("Rho", "Rom1"))
-```
-
-```{r}
-Injured_AHV2F2BGXB_Trial_Removal <- subset(Injured_AHV2F2BGXB_Trial, idents = c(5, 6), invert = TRUE)
-Injured_AHV2F2BGXB_Trial_Removal <- subset(Injured_AHV2F2BGXB_Trial_Removal, subset = Rho > 0 & Gnat1 > 0, invert = TRUE)
-```
-
-```{r}
-Injured_AHV2F2BGXB_Trial_Removal <- NormalizeData(Injured_AHV2F2BGXB_Trial_Removal, normalization.method = "LogNormalize", scale.factor = 10000)
-Injured_AHV2F2BGXB_Trial_Removal <- FindVariableFeatures(Injured_AHV2F2BGXB_Trial_Removal, selection.method = "vst", nfeatures = 2000)
-Injured_AHV2F2BGXB_Trial_Removal <- ScaleData(Injured_AHV2F2BGXB_Trial_Removal, verbose = FALSE)
-Injured_AHV2F2BGXB_Trial_Removal <- RunPCA(Injured_AHV2F2BGXB_Trial_Removal, npcs = 30, verbose = FALSE)
-```
-
-```{r}
-#Test the dimensionality
-intrinsicDimension::maxLikGlobalDimEst(Injured_AHV2F2BGXB_Trial_Removal@reductions$pca@cell.embeddings, k = 10)
-```
-
-```{r}
-Injured_AHV2F2BGXB_Trial_Removal <- RunUMAP(Injured_AHV2F2BGXB_Trial_Removal, reduction = "pca", dims = 1:15)
-Injured_AHV2F2BGXB_Trial_Removal <- FindNeighbors(Injured_AHV2F2BGXB_Trial_Removal, reduction = "pca", dims = 1:15)
-Injured_AHV2F2BGXB_Trial_Removal <- FindClusters(Injured_AHV2F2BGXB_Trial_Removal, resolution = 0.5)
-```
-
-```{r}
-# Visualization
-p1 <- DimPlot(Injured_AHV2F2BGXB_Trial_Removal, reduction = "umap", group.by = "orig.ident")
-p2 <- DimPlot(Injured_AHV2F2BGXB_Trial_Removal, reduction = "umap", label = TRUE, repel = TRUE)
-p1 + p2
-```
-
-```{r}
-VlnPlot(object = Injured_AHV2F2BGXB_Trial_Removal, features =c("S100b", "Pecam1", "Gnat2", "Csf1r", "Gnat1", "Pcp2"))
-VlnPlot(object = Injured_AHV2F2BGXB_Trial_Removal, features =c("Rho", "Rom1"))
-```
-
-```{r}
-Injured_AHV2F2BGXB_Trial_Removal.markers <- FindAllMarkers(Injured_AHV2F2BGXB_Trial_Removal, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-```
-
-```{r}
-Injured_AHV2F2BGXB_Trial_Removal.markers %>%
-  group_by(cluster) %>%
-  top_n(n = 5, wt = avg_log2FC)
-```
-
-```{r}
-s.genes <- cc.genes$s.genes
-g2m.genes <- cc.genes$g2m.genes
-Injured_AHV2F2BGXB_Trial_Removal <- CellCycleScoring(Injured_AHV2F2BGXB_Trial_Removal, g2m.features = g2m.genes, s.features = s.genes, set.ident = TRUE)
-# Visualization
-p1 <- DimPlot(Injured_AHV2F2BGXB_Trial_Removal, reduction = "umap", group.by = "Phase")
-p2 <- DimPlot(Injured_AHV2F2BGXB_Trial_Removal, reduction = "umap", label = TRUE, repel = TRUE)
-p1 + p2
-```
-
-#Adding Nf2 clasification
-Adding metadata for visualization of a specific gene for downstream visualization and analyses.
-
-```{r}
-poscells <- WhichCells(Injured_AHV2F2BGXB_Trial_Removal, expression = Nf2 > 0)
-nutralcells <- WhichCells(Injured_AHV2F2BGXB_Trial_Removal, expression = Nf2 == 0 )
-Injured_AHV2F2BGXB_Trial_Removal$Nf2_exp<- ifelse(colnames(Injured_AHV2F2BGXB_Trial_Removal) %in% poscells, "Pos", "Neg")
-```
-
-```{r}
-Idents(object = Injured_AHV2F2BGXB_Trial_Removal) <- "Nf2_exp"
-Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2 <- FindAllMarkers(Injured_AHV2F2BGXB_Trial_Removal, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.1)
-```
-
-```{r}
-Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2 %>%
-  group_by(cluster) %>%
-  top_n(n = 10, wt = avg_log2FC)
-```
-
-```{r}
-write.csv(subset(Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2, Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2$cluster == "Pos"),"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Injured_Nf2_Positive_vs_Negative.csv", row.names = TRUE)
-write.csv(subset(Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2, Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2$cluster == "Neg"),"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Injured_Nf2_Negative_vs_Positive.csv", row.names = TRUE)
-```
-
-
-
-
-
-
 ## Sample AHWN2VBGXC and AHV2F2BGXB Merged, taken 20/06/09
 
 ```{r}
@@ -527,6 +274,8 @@ plot2 <- FeatureScatter(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, feature1 
 plot1 + plot2
 ```
 
+During this step the three data sets are normalize and the variable features for each data set are identified independently. This set is done to properly integrate the three data sets together by identifying repeatedly variable features across data sets.This starts with running principal component analysis or PCA on the scaled dataset using the variable features. The calculated PC are then represented with different graphical features such as JackStraw and Elbow plots to estimate an appropriate PC to remove technical noise from the dataset.
+
 ```{r}
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial <- NormalizeData(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, normalization.method = "LogNormalize", scale.factor = 10000)
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial <- FindVariableFeatures(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, selection.method = "vst", nfeatures = 2000)
@@ -534,16 +283,29 @@ Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial <- ScaleData(Uninjured_AHWN2VBGXC_
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial <- RunPCA(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, npcs = 30, verbose = FALSE)
 ```
 
+JackStraw provides a graphic to compare the distribution of p-values for the PCs represented. This can be used to see significant drop offs of the PCs that shows strong enrichment of features with low p-values.An alternate method or a method that can be used in tandem to the JackStraw method is the elbow plot. The elbow plot ranks the PCs based on the percentage of variance explained by each one. The PC can then be chosen based on the "elbow" seen within the plot and leaning towards the higher side of the range that is chosen. There are also separate packages outside of Seurat that can be used to estimate the dimensionality of the dataset. This can be seen here using that R package intrinsicDimension to estimate an appropriate PC.
+
 ```{r}
 #Test the dimensionality
 intrinsicDimension::maxLikGlobalDimEst(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial@reductions$pca@cell.embeddings, k = 10)
+Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial <- JackStraw(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, num.replicate = 100)
+Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial <- ScoreJackStraw(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, dims = 1:20)
 ```
+
+```{r}
+JackStrawPlot(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, dims = 1:20)
+ElbowPlot(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial)
+```
+
+After deciding on the PC the Uniform Manifold Approximation and Projection is run as a dimensional reduction technique. Afterwards run the FindNeighbors function to compute the k.param nearest neighbors. Using the Waltman and van Eck algorithms calculate the clusters from the calculated nearest neighbors.
 
 ```{r}
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial <- RunUMAP(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, reduction = "pca", dims = 1:14)
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial <- FindNeighbors(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, reduction = "pca", dims = 1:14)
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial <- FindClusters(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, resolution = 0.5)
 ```
+
+Visualizing the clustering and original identities of the data.
 
 ```{r}
 # Visualization
@@ -552,15 +314,21 @@ p2 <- DimPlot(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, reduction = "umap",
 p1 + p2
 ```
 
+Removal of contamination using gene markers that of known cell contaminators. Violin plots provides a graphic of which clusters contain the gene markers.
+
 ```{r}
 VlnPlot(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, features =c("S100b", "Pecam1", "Gnat2", "Csf1r", "Gnat1", "Pcp2"))
 VlnPlot(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, features =c("Rho", "Rom1"))
 ```
 
+Subset out the clusters that are associated with higher concentrations of the gene markers. Subset cells that contain a combination of gene markers that are associated with the contamination.
+
 ```{r}
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal <- subset(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial, idents = c(6, 7), invert = TRUE)
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal <- subset(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, subset = Rho > 0 & Gnat1 > 0, invert = TRUE)
 ```
+
+Re-analyze and re-cluster the remaining cells after the removal of contamination.
 
 ```{r}
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal <- NormalizeData(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, normalization.method = "LogNormalize", scale.factor = 10000)
@@ -611,90 +379,6 @@ Visualize, in table form, of top genes associated with each cluster.
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers %>%
   group_by(cluster) %>%
   top_n(n = 5, wt = avg_log2FC)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_0_vs_3 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 0, ident.2 = c(3), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_0_vs_3, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_3_vs_0 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 3, ident.2 = c(0), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_3_vs_0, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_1_vs_2.4.5 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 1, ident.2 = c(2, 4, 5), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_1_vs_2.4.5, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_2_vs_1.4.5 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 2, ident.2 = c(1, 4, 5), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_2_vs_1.4.5, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_4_vs_1.2.5 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 4, ident.2 = c(1, 2, 5), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_4_vs_1.2.5, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_5_vs_1.2.4 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 5, ident.2 = c(1, 2, 4), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_5_vs_1.2.4, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_2_vs_1.5 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 2, ident.2 = c(1, 5), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_2_vs_1.5, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_4_vs_1.5 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 4, ident.2 = c(1, 5), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_4_vs_1.5, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_1_vs_2.4 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 1, ident.2 = c(2, 4), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_1_vs_2.4, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_5_vs_2.4 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 5, ident.2 = c(2, 4), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_5_vs_2.4, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_1_vs_5 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 1, ident.2 = c(5), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_1_vs_5, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_5_vs_1 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 5, ident.2 = c(1), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_5_vs_1, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_2_vs_4 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 2, ident.2 = c(4), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_2_vs_4, n = 15)
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "seurat_clusters"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_4_vs_2 <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = 4, ident.2 = c(2), min.pct = 0.25, only.pos = TRUE)
-head(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Cluster_4_vs_2, n = 15)
 ```
 
 ```{r}
@@ -749,10 +433,14 @@ Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal@meta.data$Sscore_Seperatio
   )
 ```
 
+visualization of created metadata. 
+
 ```{r}
 Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "Sscore_Seperation"
 DimPlot(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal)
 ```
+
+Upregulated genes can then be calculated for the created metadata.
 
 ```{r}
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Sscore_Seperation <- FindAllMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
@@ -768,98 +456,14 @@ Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Sscore_Seperation 
   top_n(n = 20, wt = avg_log2FC)
 ```
 
+Create csv files for the up regulated genes of different cluster comparisons for TopGo analyses with Metascape.
+
 ```{r}
 write.csv(subset(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Sscore_Seperation, Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Sscore_Seperation$cluster == "High_Sscore_Gmnn"),"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_High_Sscore_Gmnn.csv", row.names = TRUE)
 write.csv(subset(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Sscore_Seperation, Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Sscore_Seperation$cluster == "Low_Sscore_No_Gmnn"),"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Low_Sscore_No_Gmnn.csv", row.names = TRUE)
 ```
 
-
-#Adding Nf2 clasification
-Adding metadata for visualization of a specific gene for downstream visualization and analyses. 
-
-```{r}
-poscells <- WhichCells(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, expression = Nf2 > 0)
-nutralcells <- WhichCells(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, expression = Nf2 == 0 )
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal$Nf2_exp<- ifelse(colnames(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) %in% poscells, "Pos", "Neg")
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "Nf2_exp"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2 <- FindAllMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-```
-
-```{r}
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2 %>%
-  group_by(cluster) %>%
-  top_n(n = 5, wt = avg_log2FC)
-```
-
-```{r}
-write.csv(subset(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2, Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2$cluster == "Pos"),"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Nf2_Positive_vs_Negative.csv", row.names = TRUE)
-write.csv(subset(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2, Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Nf2$cluster == "Neg"),"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Nf2_Negative_vs_Positive.csv", row.names = TRUE)
-```
-
-```{r}
-DimPlot(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, reduction = "umap", group.by = "Nf2_exp")
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "orig.ident"
-poscells <- WhichCells(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, expression = Nf2 > 0, idents = "Injured_AHV2F2BGXB")
-nutralcells <- WhichCells(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, expression = Nf2 == 0, idents = "Injured_AHV2F2BGXB")
-poscells2 <- WhichCells(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, expression = Nf2 > 0, idents = "Uninjured_AHWN2VBGXC")
-nutralcells2 <- WhichCells(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, expression = Nf2 == 0, idents = "Uninjured_AHWN2VBGXC")
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal$Seperated_Nf2_exp<- ifelse(colnames(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) %in% poscells, "Injured_Pos", ifelse(colnames(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) %in% nutralcells, "Injured_Neg", ifelse(colnames(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) %in% poscells2, "Uninjured_Pos", "Uninjured_Neg")))
-```
-
-```{r}
-Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "Seperated_Nf2_exp"
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Nf2 <- FindAllMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-```
-
-```{r}
-write.csv(subset(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Nf2, Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Nf2$cluster == "Uninjured_Pos"),"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Uninjured_Nf2_Positive_vs_Negative.csv", row.names = TRUE)
-write.csv(subset(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Nf2, Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Nf2$cluster == "Uninjured_Neg"),"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Uninjured_Nf2_Negative_vs_Positive.csv", row.names = TRUE)
-write.csv(subset(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Nf2, Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Nf2$cluster == "Injured_Pos"),"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Injured_Nf2_Positive_vs_Negative.csv", row.names = TRUE)
-write.csv(subset(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Nf2, Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Nf2$cluster == "Injured_Neg"),"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Injured_Nf2_Negative_vs_Positive.csv", row.names = TRUE)
-```
-
-```{r}
-DimPlot(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, reduction = "umap", group.by = "Seperated_Nf2_exp")
-```
-
-```{r}
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Nf2 %>%
-  group_by(cluster) %>%
-  top_n(n = 5, wt = avg_log2FC)
-```
-
-```{r}
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Uninjured_Pos_vs_Uninjured_Neg <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = "Uninjured_Pos", ident.2 = "Uninjured_Neg", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.1)
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Injured_Pos_vs_Injured_Neg <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = "Injured_Pos", ident.2 = "Injured_Neg", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.1)
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Uninjured_Pos_vs_Injured_Pos <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = "Uninjured_Pos", ident.2 = "Injured_Pos", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Injured_Pos_vs_Uninjured_Pos <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = "Injured_Pos", ident.2 = "Uninjured_Pos", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-```
-
-```{r}
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Uninjured_Pos_vs_Uninjured_Neg %>%
-  top_n(n = 5, wt = avg_log2FC)
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Injured_Pos_vs_Injured_Neg %>%
-  top_n(n = 5, wt = avg_log2FC)
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Uninjured_Pos_vs_Injured_Pos %>%
-  top_n(n = 5, wt = avg_log2FC)
-Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Injured_Pos_vs_Uninjured_Pos %>%
-  top_n(n = 5, wt = avg_log2FC)
-```
-
-```{r}
-write.csv(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Uninjured_Pos_vs_Uninjured_Neg,"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output//Wildtype_Nf2_Uninjured_Pos_vs_Uninjured_Neg.csv", row.names = TRUE)
-write.csv(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Injured_Pos_vs_Injured_Neg, "~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Nf2_Injured_Pos_vs_Injured_Neg.csv", row.names = TRUE)
-write.csv(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Uninjured_Pos_vs_Injured_Pos, "~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Nf2_Uninjured_Pos_vs_Injured_Pos.csv", row.names = TRUE)
-write.csv(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Injured_Pos_vs_Uninjured_Pos, "~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Wildtype_Nf2_Injured_Pos_vs_Uninjured_Pos.csv", row.names = TRUE)
-```
-
-Adding Gfap classifier
+# Adding Gfap classifier
 
 ```{r}
 Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "orig.ident"
@@ -874,26 +478,33 @@ Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal$Seperated_Gfap_exp<- ifels
 DimPlot(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, reduction = "umap", group.by = "Seperated_Gfap_exp")
 ```
 
+Upregulated genes can then be calculated for the created metadata.
 
 ```{r}
 Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "Seperated_Gfap_exp"
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Gfap_Injured_neg_vs_Injured_pos <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = "Injured_Neg", ident.2 = "Injured_Pos", min.pct = 0.25, only.pos = TRUE)
 ```
 
+Create csv files for the up regulated genes of different cluster comparisons for TopGo analyses with Metascape.
+
 ```{r}
 write.csv(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Gfap_Injured_neg_vs_Injured_pos,"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Injured_Gfap_Negative_vs_Injured_Gfap_Positive.csv", row.names = TRUE)
 ```
+
+Upregulated genes can then be calculated for the created metadata.
 
 ```{r}
 Idents(object = Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal) <- "Seperated_Gfap_exp"
 Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Gfap_Injured_neg_vs_Uninjured_Neg <- FindMarkers(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal, ident.1 = "Injured_Neg", ident.2 = "Uninjured_Neg", min.pct = 0.25, only.pos = TRUE)
 ```
 
+Create csv files for the up regulated genes of different cluster comparisons for TopGo analyses with Metascape.
+
 ```{r}
 write.csv(Uninjured_AHWN2VBGXC_Injured_AHV2F2BGXB_Trial_Removal.markers_Seperated_Gfap_Injured_neg_vs_Uninjured_Neg,"~/yard/R_Projects/Wildtype_Glast+_Tdtomato_DataSet/Find_Markers_output/Injured_Gfap_Negative_vs_Uninjured_Gfap_Negative.csv", row.names = TRUE)
 ```
 
-Create objects associated with the ShinyCell package to display for continues lab use displayed on the the lab server. Remove or alter titals of metadata within each Seurat object for ease of use on the siny app.
+Create objects associated with the ShinyCell package to display for continues lab use displayed on the the lab server. Remove or alter trials of metadata within each Seurat object for ease of use on the shiny app.
 
 ```{r}
 #Configuration for colors/order/present data within the shiny app
@@ -971,3 +582,4 @@ Move or copy the shiny app using the command prompt to the shiny server file on 
 
 Code example: 
 sudo cp -r "Path_to_Shiny_app_folder" /srv/shiny-server
+
