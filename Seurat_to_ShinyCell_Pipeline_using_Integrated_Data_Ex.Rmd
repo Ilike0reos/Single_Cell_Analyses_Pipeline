@@ -1,0 +1,693 @@
+---
+title: "Integrated_Published_Data"
+author: "Tyler Leach"
+date: "10/15/2021"
+output: html_document
+---
+
+Load Required Packages for Analysis
+
+```{r}
+Packages <- c("dplyr", "ggplot2", "Seurat", "ShinyCell", "intrinsicDimension")
+
+lapply(Packages, library, character.only = TRUE)
+```
+
+Create Seurat objects that removes features that are seen in less then 3 cells and cells with less then 200 features. This removes reads that are not substantial.
+
+```{r}
+## Starting Seurat objects
+
+AHTYHFBGX5 <- Read10X(data.dir = "~/yard/Cell_Ranger/cell_ranger_counts/180509_NB501771_0179_AHTYHFBGX5_counts/outs/filtered_feature_bc_matrix")
+
+AHTYHFBGX5_Seurat <- CreateSeuratObject(counts = AHTYHFBGX5, project = "AHTYHFBGX5", min.cells = 3, min.features = 200)
+
+
+AHTNLKBGX5 <- Read10X(data.dir = "~/yard/Cell_Ranger/cell_ranger_counts/180514_NB501771_0184_AHTNLKBGX5_counts/outs/filtered_feature_bc_matrix")
+
+AHTNLKBGX5_Seurat <- CreateSeuratObject(counts = AHTNLKBGX5, project = "AHTNLKBGX5", min.cells = 3, min.features = 200)
+
+
+AHM377BGX5 <- Read10X(data.dir = "~/yard/Cell_Ranger/cell_ranger_counts/180330_NB501771_0166_AHM377BGX5_counts/outs/filtered_feature_bc_matrix")
+
+AHM377BGX5_Seurat <- CreateSeuratObject(counts = AHM377BGX5, project = "AHM377BGX5", min.cells = 3, min.features = 200)
+
+```
+
+## Sample AHTNLKBGX5, taken 18/03/30
+
+```{r}
+AHM377BGX5_Trial <- AHM377BGX5_Seurat
+```
+
+Creates a metric to quantify the mitochondrial genes that are present within each of the cells. This is done by looking through the gene names for any gene that starts with mt-, which denotes mitochondrial genes, and quantifying the percentage of features belong to the specific cell. After which metadata gets added of the percentage of each cell. 
+
+```{r}
+AHM377BGX5_Trial <- PercentageFeatureSet(AHM377BGX5_Trial, pattern = "^mt-", col.name = "percent.mt")
+AHM377BGX5_Trial$log10GenesPerUMI <- log10(AHM377BGX5_Trial$nFeature_RNA) / log10(AHM377BGX5_Trial$nCount_RNA)
+```
+
+Create a matrix of the metadata to easily view different ggplots of the metadata to decide on cell removal levels for each characteristic. 
+
+```{r}
+metadata <- AHM377BGX5_Trial@meta.data
+metadata$cells <- rownames(metadata)
+metadata <- metadata %>%
+        dplyr::rename(seq_folder = orig.ident,
+                      nUMI = nCount_RNA,
+                      nGene = nFeature_RNA)
+```
+
+Shows the cell density with respect to the number of counts for each cell. Higher and lower cells can denote Low-quality cells or empty droplets and Cell doublets or multiplets. Both of these cell groups need to be removed from the data as they cause problems in downstream analysis.
+
+```{r}
+metadata %>% 
+  	ggplot(aes(x=nUMI)) + 
+  	geom_density(alpha = 0.2) + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = c(3000,40000))
+```
+
+Shows the cell density with respect to the number of genes for each cell. Lower gene counts can denote Low-quality cells or empty droplets. Both of these cell groups need to be removed from the data as they cause problems in downstream analysis.
+
+```{r}
+metadata %>% 
+  	ggplot(aes(x=nGene)) + 
+  	geom_density(alpha = 0.2) + 
+  	theme_classic() +
+  	scale_x_log10() + 
+  	geom_vline(xintercept = c(1500))
+```
+
+```{r}
+metadata %>% 
+  	ggplot(aes(x=nUMI, y=nGene, color=percent.mt)) + 
+  	geom_point() + 
+	scale_colour_gradient(low = "gray90", high = "black") +
+  	stat_smooth(method=lm) +
+  	scale_x_log10() + 
+  	scale_y_log10() + 
+  	theme_classic() +
+  	geom_vline(xintercept = 3000) +
+  	geom_hline(yintercept = 1500)
+```
+
+Shows the percentage of mitochondrial genes within the cells. Higher percentages of mitochondrial genes denotes things such as dying cell. Dying cells are not useful in most cases and thus need to be removed. The percentage of mitochondrial genes can varies based on the types of tissue working with and should be removed based on what is being worked with. A common cut off for mitochondrial gene percentage is between 5 to 15 percent.
+
+```{r}
+metadata %>% 
+  	ggplot(aes(x=percent.mt)) + 
+  	geom_density(alpha = 10) + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	geom_vline(xintercept = 10)
+```
+
+Violin plots to have an easy visual of the outlines present within the data set before and after removal of cells. 
+
+```{r}
+VlnPlot(AHM377BGX5_Trial, features = c("nFeature_RNA", "nCount_RNA"), ncol = 3)
+VlnPlot(AHM377BGX5_Trial, features = c("percent.mt", "log10GenesPerUMI"), ncol = 3)
+
+```
+
+```{r}
+plot1 <- FeatureScatter(AHM377BGX5_Trial, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(AHM377BGX5_Trial, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+Removal of cells present within the Seurat object labeled during the above quality control steps. This will remove dead cells, cells that have formed doublets or more, and cells that were low quality or misses.
+
+```{r}
+AHM377BGX5_Trial <- subset(AHM377BGX5_Trial, subset = nFeature_RNA > 1500 & log10GenesPerUMI > 0.80 & percent.mt < 10 & nCount_RNA > 3000 & nCount_RNA < 40000)
+```
+
+Violin plots to visualize the removal of outlines and unstable cells. 
+
+```{r}
+plot1 <- FeatureScatter(AHM377BGX5_Trial, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(AHM377BGX5_Trial, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+```{r}
+VlnPlot(AHM377BGX5_Trial, features = c("nFeature_RNA", "nCount_RNA"), ncol = 3)
+VlnPlot(AHM377BGX5_Trial, features = c("percent.mt", "log10GenesPerUMI"), ncol = 3)
+```
+
+Repeat above steps for each of the samples present within the experiment.
+
+
+## Sample AHTNLKBGX5, taken 18/05/14
+
+```{r}
+AHTNLKBGX5_Trial <- AHTNLKBGX5_Seurat
+```
+
+```{r}
+AHTNLKBGX5_Trial <- PercentageFeatureSet(AHTNLKBGX5_Trial, pattern = "^mt-", col.name = "percent.mt")
+AHTNLKBGX5_Trial$log10GenesPerUMI <- log10(AHTNLKBGX5_Trial$nFeature_RNA) / log10(AHTNLKBGX5_Trial$nCount_RNA)
+```
+
+```{r}
+metadata_AHTNLKBGX5 <- AHTNLKBGX5_Trial@meta.data
+metadata_AHTNLKBGX5$cells <- rownames(metadata_AHTNLKBGX5)
+metadata_AHTNLKBGX5 <- metadata_AHTNLKBGX5 %>%
+        dplyr::rename(seq_folder = orig.ident,
+                      nUMI = nCount_RNA,
+                      nGene = nFeature_RNA)
+```
+```{r}
+metadata_AHTNLKBGX5 %>% 
+  	ggplot(aes(x=nUMI)) + 
+  	geom_density(alpha = 0.2) + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = c(3000,40000))
+```
+
+```{r}
+metadata_AHTNLKBGX5 %>% 
+  	ggplot(aes(x=nGene)) + 
+  	geom_density(alpha = 0.2) + 
+  	theme_classic() +
+  	scale_x_log10() + 
+  	geom_vline(xintercept = c(1500))
+```
+
+```{r}
+metadata_AHTNLKBGX5 %>% 
+  	ggplot(aes(x=nUMI, y=nGene, color=percent.mt)) + 
+  	geom_point() + 
+	scale_colour_gradient(low = "gray90", high = "black") +
+  	stat_smooth(method=lm) +
+  	scale_x_log10() + 
+  	scale_y_log10() + 
+  	theme_classic() +
+  	geom_vline(xintercept = 3000) +
+  	geom_hline(yintercept = 1500)
+```
+
+```{r}
+metadata_AHTNLKBGX5 %>% 
+  	ggplot(aes(x=percent.mt)) + 
+  	geom_density(alpha = 10) + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	geom_vline(xintercept = 10)
+```
+
+
+```{r}
+VlnPlot(AHTNLKBGX5_Trial, features = c("nFeature_RNA", "nCount_RNA"), ncol = 3)
+VlnPlot(AHTNLKBGX5_Trial, features = c("percent.mt", "log10GenesPerUMI"), ncol = 3)
+
+```
+
+```{r}
+plot1 <- FeatureScatter(AHTNLKBGX5_Trial, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(AHTNLKBGX5_Trial, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+```{r}
+AHTNLKBGX5_Trial <- subset(AHTNLKBGX5_Trial, subset = nFeature_RNA > 1500 & log10GenesPerUMI > 0.80 & percent.mt < 10 & nCount_RNA > 3000 & nCount_RNA < 40000)
+```
+
+```{r}
+plot1 <- FeatureScatter(AHTNLKBGX5_Trial, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(AHTNLKBGX5_Trial, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+```{r}
+VlnPlot(AHTNLKBGX5_Trial, features = c("nFeature_RNA", "nCount_RNA"), ncol = 3)
+VlnPlot(AHTNLKBGX5_Trial, features = c("percent.mt", "log10GenesPerUMI"), ncol = 3)
+```
+
+## Sample AHTYHFBGX5, taken 18/05/09
+
+```{r}
+AHTYHFBGX5_Trial <- AHTYHFBGX5_Seurat
+```
+
+```{r}
+AHTYHFBGX5_Trial <- PercentageFeatureSet(AHTYHFBGX5_Trial, pattern = "^mt-", col.name = "percent.mt")
+AHTYHFBGX5_Trial$log10GenesPerUMI <- log10(AHTYHFBGX5_Trial$nFeature_RNA) / log10(AHTYHFBGX5_Trial$nCount_RNA)
+```
+
+```{r}
+metadata_AHTYHFBGX5 <- AHTYHFBGX5_Trial@meta.data
+metadata_AHTYHFBGX5$cells <- rownames(metadata_AHTYHFBGX5)
+metadata_AHTYHFBGX5 <- metadata_AHTYHFBGX5 %>%
+        dplyr::rename(seq_folder = orig.ident,
+                      nUMI = nCount_RNA,
+                      nGene = nFeature_RNA)
+```
+```{r}
+metadata_AHTYHFBGX5 %>% 
+  	ggplot(aes(x=nUMI)) + 
+  	geom_density(alpha = 0.2) + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	ylab("Cell density") +
+  	geom_vline(xintercept = c(3000,44000))
+```
+
+```{r}
+metadata_AHTYHFBGX5 %>% 
+  	ggplot(aes(x=nGene)) + 
+  	geom_density(alpha = 0.2) + 
+  	theme_classic() +
+  	scale_x_log10() + 
+  	geom_vline(xintercept = 1500)
+```
+
+```{r}
+metadata_AHTYHFBGX5 %>% 
+  	ggplot(aes(x=nUMI, y=nGene, color=percent.mt)) + 
+  	geom_point() + 
+	scale_colour_gradient(low = "gray90", high = "black") +
+  	stat_smooth(method=lm) +
+  	scale_x_log10() + 
+  	scale_y_log10() + 
+  	theme_classic() +
+  	geom_vline(xintercept = 3000) +
+  	geom_hline(yintercept = 1500)
+```
+
+```{r}
+metadata_AHTYHFBGX5 %>% 
+  	ggplot(aes(x=percent.mt)) + 
+  	geom_density(alpha = 10) + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	geom_vline(xintercept = 10)
+```
+
+
+```{r}
+VlnPlot(AHTYHFBGX5_Trial, features = c("nFeature_RNA", "nCount_RNA"), ncol = 3)
+VlnPlot(AHTYHFBGX5_Trial, features = c("percent.mt", "log10GenesPerUMI"), ncol = 3)
+
+```
+
+```{r}
+plot1 <- FeatureScatter(AHTYHFBGX5_Trial, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(AHTYHFBGX5_Trial, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+```{r}
+AHTYHFBGX5_Trial <- subset(AHTYHFBGX5_Trial, subset = nFeature_RNA > 1500 & log10GenesPerUMI > 0.80 & percent.mt < 10 & nCount_RNA > 3000 & nCount_RNA < 44000)
+```
+
+```{r}
+plot1 <- FeatureScatter(AHTYHFBGX5_Trial, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(AHTYHFBGX5_Trial, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+```{r}
+VlnPlot(AHTYHFBGX5_Trial, features = c("nFeature_RNA", "nCount_RNA"), ncol = 3)
+VlnPlot(AHTYHFBGX5_Trial, features = c("percent.mt", "log10GenesPerUMI"), ncol = 3)
+```
+
+## Integrated Published Data Analysis
+
+After Quality Control has been preformed on all of the biological replicates present within the experiment the samples can be merged within on Seurat object. 
+
+```{r}
+## Merged Data sets
+Hippo_Pathway_Study_better_QC <- merge(AHTYHFBGX5_Trial, y = c(AHTNLKBGX5_Trial, AHM377BGX5_Trial), add.cell.ids = c("AHTYHFBGX5", "AHTNLKBGX5","AHM377BGX5"), project = "Hippo_Pathway_Study")
+Hippo_Pathway_Study_better_QC
+```
+
+During this step the three data sets are normalize and the variable features for each data set are identified independently. This set is done to properly integrate the three data sets together by identifying repeatedly variable features across data sets.
+
+```{r}
+Hippo_Pathway_Study_better_QC.list <- SplitObject(Hippo_Pathway_Study_better_QC, split.by = "orig.ident")
+
+Hippo_Pathway_Study_better_QC.list <- lapply(X = Hippo_Pathway_Study_better_QC.list, FUN = function(x) {
+    x <- NormalizeData(x, normalization.method = "LogNormalize", scale.factor = 10000)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+features <- SelectIntegrationFeatures(object.list = Hippo_Pathway_Study_better_QC.list)
+```
+
+During this step anchors are identified and the datasets are integrated together.
+
+```{r}
+Hippo_Pathway_Study_better_QC.anchors <- FindIntegrationAnchors(object.list = Hippo_Pathway_Study_better_QC.list, anchor.features = features)
+# this command creates an 'integrated' data assay
+Hippo_Pathway_Study_better_QC.combined <- IntegrateData(anchorset = Hippo_Pathway_Study_better_QC.anchors)
+```
+
+The Seurat object should now have and integrated and RNA data group. The RNA data will contain unmodified data in case it is needed. With the integrated data set we now run the Seurat standard workflow for visualization and clustering. This starts with running principal component analysis or PCA on the scaled dataset using the variable features. The calculated PC are then represented with different graphical features such as JackStraw and Elbow plots to estimate an appropriate PC to remove technical noise from the dataset.
+
+```{r}
+DefaultAssay(Hippo_Pathway_Study_better_QC.combined) <- "integrated"
+Hippo_Pathway_Study_better_QC.combined <- ScaleData(Hippo_Pathway_Study_better_QC.combined, verbose = FALSE)
+Hippo_Pathway_Study_better_QC.combined <- RunPCA(Hippo_Pathway_Study_better_QC.combined, npcs = 30, verbose = FALSE)
+```
+
+```{r}
+Hippo_Pathway_Study_better_QC.combined <- JackStraw(Hippo_Pathway_Study_better_QC.combined, num.replicate = 100)
+Hippo_Pathway_Study_better_QC.combined <- ScoreJackStraw(Hippo_Pathway_Study_better_QC.combined, dims = 1:20)
+```
+
+JackStraw provides a graphic to compare the distribution of p-values for the PCs represented. This can be used to see significant drop offs of the PCs that shows strong enrichment of features with low p-values.
+
+```{r}
+JackStrawPlot(Hippo_Pathway_Study_better_QC.combined, dims = 1:20)
+```
+
+An alternate method or a method that can be used in tandem to the JackStraw method is the elbow plot. The elbow plot ranks the PCs based on the percentage of variance explained by each one. The PC can then be chosen based on the "elbow" seen within the plot and leaning towards the higher side of the range that is chosen.
+
+```{r}
+ElbowPlot(Hippo_Pathway_Study_better_QC.combined)
+```
+
+There are also separate packages outside of Seurat that can be used to estimate the dimensionality of the dataset. This can be seen here using that R package intrinsicDimension to estimate an appropriate PC. 
+
+```{r}
+#Test the dimensionality
+intrinsicDimension::maxLikGlobalDimEst(Hippo_Pathway_Study_better_QC.combined@reductions$pca@cell.embeddings, k = 10)
+```
+
+After deciding on the PC the Uniform Manifold Approximation and Projection is run as a dimensional reduction technique. Afterwards run the FindNeighbors function to compute the k.param nearest neighbors. Using the Waltman and van Eck algorithms calculate the clusters from the calculated nearest neighbors.
+
+```{r}
+Hippo_Pathway_Study_better_QC.combined <- RunUMAP(Hippo_Pathway_Study_better_QC.combined, reduction = "pca", dims = 1:14)
+Hippo_Pathway_Study_better_QC.combined <- FindNeighbors(Hippo_Pathway_Study_better_QC.combined, reduction = "pca", dims = 1:14)
+Hippo_Pathway_Study_better_QC.combined <- FindClusters(Hippo_Pathway_Study_better_QC.combined, resolution = 0.5)
+```
+
+Visualizing the clustering and original identities of the data.
+
+```{r}
+# Visualization
+p1 <- DimPlot(Hippo_Pathway_Study_better_QC.combined, reduction = "umap", group.by = "orig.ident")
+p2 <- DimPlot(Hippo_Pathway_Study_better_QC.combined, reduction = "umap", label = TRUE, repel = TRUE)
+p1 + p2
+```
+
+Visualization of known genes associated with being gene markers for cells that are not Muller Glia cells. 
+
+```{r}
+VlnPlot(object = Hippo_Pathway_Study_better_QC.combined, features =c("S100b", "Pecam1", "Gnat2", "Csf1r", "Gnat1", "Pcp2"))
+VlnPlot(object = Hippo_Pathway_Study_better_QC.combined, features =c("Rho", "Rom1"))
+```
+
+Removal of clusters associated with other cell types.
+
+```{r}
+Hippo_Pathway_Study_better_QC.combined_Removal <- subset(Hippo_Pathway_Study_better_QC.combined, idents = c(10, 11, 12, 13), invert = TRUE)
+```
+
+Change the default assay for the Seurat object to the base RNA dataset.
+
+```{r}
+DefaultAssay(Hippo_Pathway_Study_better_QC.combined_Removal) <- "RNA"
+```
+
+Re-analyse and re-cluster the Seurat object. Start with normalization and identify variable features for each dataset independently.
+
+```{r}
+Hippo_Pathway_Study_better_QC.combined_Removal.list <- SplitObject(Hippo_Pathway_Study_better_QC.combined_Removal, split.by = "orig.ident")
+
+Hippo_Pathway_Study_better_QC.combined_Removal.list <- lapply(X = Hippo_Pathway_Study_better_QC.combined_Removal.list, FUN = function(x) {
+    x <- NormalizeData(x, normalization.method = "LogNormalize", scale.factor = 10000)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+features <- SelectIntegrationFeatures(object.list = Hippo_Pathway_Study_better_QC.combined_Removal.list)
+```
+
+```{r}
+Hippo_Pathway_Study_better_QC.combined_Removal.anchors <- FindIntegrationAnchors(object.list = Hippo_Pathway_Study_better_QC.combined_Removal.list, anchor.features = features)
+# this command creates an 'integrated' data assay
+Hippo_Pathway_Study_better_QC.combined_Removal.combined <- IntegrateData(anchorset = Hippo_Pathway_Study_better_QC.combined_Removal.anchors)
+```
+
+```{r}
+DefaultAssay(Hippo_Pathway_Study_better_QC.combined_Removal.combined) <- "integrated"
+
+Hippo_Pathway_Study_better_QC.combined_Removal.combined <- ScaleData(Hippo_Pathway_Study_better_QC.combined_Removal.combined, verbose = FALSE)
+Hippo_Pathway_Study_better_QC.combined_Removal.combined <- RunPCA(Hippo_Pathway_Study_better_QC.combined_Removal.combined, npcs = 30, verbose = FALSE)
+```
+
+```{r}
+#Test the dimensionality
+intrinsicDimension::maxLikGlobalDimEst(Hippo_Pathway_Study_better_QC.combined_Removal.combined@reductions$pca@cell.embeddings, k = 10)
+```
+
+```{r}
+Hippo_Pathway_Study_better_QC.combined_Removal.combined <- RunUMAP(Hippo_Pathway_Study_better_QC.combined_Removal.combined, reduction = "pca", dims = 1:14)
+Hippo_Pathway_Study_better_QC.combined_Removal.combined <- FindNeighbors(Hippo_Pathway_Study_better_QC.combined_Removal.combined, reduction = "pca", dims = 1:14)
+Hippo_Pathway_Study_better_QC.combined_Removal.combined <- FindClusters(Hippo_Pathway_Study_better_QC.combined_Removal.combined, resolution = 0.5)
+```
+
+```{r}
+# Visualization
+p1 <- DimPlot(Hippo_Pathway_Study_better_QC.combined_Removal.combined, reduction = "umap", group.by = "orig.ident")
+p2 <- DimPlot(Hippo_Pathway_Study_better_QC.combined_Removal.combined, reduction = "umap", label = TRUE, repel = TRUE)
+p1 + p2
+```
+
+Label clusters based on unregulated genes within each cluster. Cells in this experiment were isolated by fluorescence-activated cell sorting for Mullar Glia cells. However, there are two types of cells present within the Mullar Glia cell population, an internal control and the experimental cells.
+
+```{r}
+Idents(object = Hippo_Pathway_Study_better_QC.combined_Removal.combined) <- "integrated_snn_res.0.5"
+new.cluster.ids <- c("Control", "Control", "Control", "Control", "YAP5SA", "Control",  "YAP5SA", "Control", "YAP5SA", "YAP5SA", "Control")
+names(new.cluster.ids) <- levels(Hippo_Pathway_Study_better_QC.combined_Removal.combined)
+Hippo_Pathway_Study_better_QC.combined_Removal.combined <- RenameIdents(Hippo_Pathway_Study_better_QC.combined_Removal.combined, new.cluster.ids)
+DimPlot(Hippo_Pathway_Study_better_QC.combined_Removal.combined, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+Hippo_Pathway_Study_better_QC.combined_Removal.combined$Labeled_Clusters <- Idents(Hippo_Pathway_Study_better_QC.combined_Removal.combined)
+```
+
+```{r}
+VlnPlot(object = Hippo_Pathway_Study_better_QC.combined_Removal.combined, features =c("S100b", "Pecam1", "Gnat2", "Csf1r", "Gnat1", "Pcp2"))
+VlnPlot(object = Hippo_Pathway_Study_better_QC.combined_Removal.combined, features =c("Rho", "Rom1"))
+```
+
+Calculation cell cycle scoring for each cell based on expression of G2/M and S phase markers.
+
+```{r}
+DefaultAssay(Hippo_Pathway_Study_better_QC.combined_Removal.combined) <- "RNA"
+Hippo_Pathway_Study_better_QC.combined_Removal.combined <- CellCycleScoring(Hippo_Pathway_Study_better_QC.combined_Removal.combined, g2m.features = cc.genes$g2m.genes,
+  s.features = cc.genes$s.genes, set.ident = TRUE)
+# Visualization
+p1 <- DimPlot(Hippo_Pathway_Study_better_QC.combined_Removal.combined, reduction = "umap", group.by = "Phase")
+p2 <- DimPlot(Hippo_Pathway_Study_better_QC.combined_Removal.combined, reduction = "umap", label = TRUE, repel = TRUE)
+p1 + p2
+```
+
+
+
+
+
+## Removal of all cells that have higher then 0 exprestion for Rho and Gnat1
+
+Rod cells or parts of rod cells are known to stick to Muller Glia cells causing contamination.
+
+```{r}
+Trial <- Hippo_Pathway_Study_better_QC.combined_Removal.combined
+DefaultAssay(Trial) <- "RNA"
+Trial <- subset(Trial, subset = Rho > 0 & Gnat1 > 0, invert = TRUE)
+```
+
+Re-analyse and re-cluster the Seurat object with the removal of possible rod contamination. Start with normalization and identify variable features for each dataset independently.
+
+```{r}
+Trial.list <- SplitObject(Trial, split.by = "orig.ident")
+
+Trial.list <- lapply(X = Trial.list, FUN = function(x) {
+    x <- NormalizeData(x, normalization.method = "LogNormalize", scale.factor = 10000)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+features <- SelectIntegrationFeatures(object.list = Trial.list)
+```
+
+```{r}
+Trial.anchors <- FindIntegrationAnchors(object.list = Trial.list, anchor.features = features)
+# this command creates an 'integrated' data assay
+Trial.combined <- IntegrateData(anchorset = Trial.anchors)
+```
+
+```{r}
+DefaultAssay(Trial.combined) <- "integrated"
+
+Trial.combined <- ScaleData(Trial.combined, verbose = FALSE)
+Trial.combined <- RunPCA(Trial.combined, npcs = 30, verbose = FALSE)
+```
+
+```{r}
+intrinsicDimension::maxLikGlobalDimEst(Trial.combined@reductions$pca@cell.embeddings, k = 10)
+```
+
+```{r}
+Trial.combined <- RunUMAP(Trial.combined, reduction = "pca", dims = 1:14)
+Trial.combined <- FindNeighbors(Trial.combined, reduction = "pca", dims = 1:14)
+Trial.combined <- FindClusters(Trial.combined, resolution = 0.5)
+```
+
+```{r}
+p1 <- DimPlot(Trial.combined, reduction = "umap", group.by = "orig.ident")
+p2 <- DimPlot(Trial.combined, reduction = "umap", label = TRUE, repel = TRUE)
+p1 + p2
+```
+
+Add metadata associated with labeling of clusters for control and YAP5SA for both combining and keeping the clusters separate.
+
+```{r}
+Idents(object = Trial.combined) <- "integrated_snn_res.0.5"
+new.cluster.ids <- c("Control", "Control", "YAP5SA", "Control",  "Control", "YAP5SA", "Control", "YAP5SA", "YAP5SA")
+names(new.cluster.ids) <- levels(Trial.combined)
+Trial.combined <- RenameIdents(Trial.combined, new.cluster.ids)
+DimPlot(Trial.combined, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+Trial.combined$Labeled_Clusters <- Idents(Trial.combined)
+```
+
+```{r}
+Idents(object = Trial.combined) <- "integrated_snn_res.0.5"
+new.cluster.ids <- c("Control_1", "Control_2", "YAP5SA_1", "Control_3",  "Control_4", "YAP5SA_2", "Control_5", "YAP5SA_3", "YAP5SA_4")
+names(new.cluster.ids) <- levels(Trial.combined)
+Trial.combined <- RenameIdents(Trial.combined, new.cluster.ids)
+DimPlot(Trial.combined, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+Trial.combined$Labeled_Clusters_S <- Idents(Trial.combined)
+```
+
+```{r}
+VlnPlot(object = Trial.combined, features =c("S100b", "Pecam1", "Gnat2", "Csf1r", "Gnat1", "Pcp2"))
+VlnPlot(object = Trial.combined, features =c("Rho", "Rom1"))
+```
+
+After clustering running FindAllMarkers or FindMarkers to find up and down regulated genes between a single cluster compared to all other cells or a single cluster vs a separate single cluster. When using FindAllMarkers Seurat uses the metadata held in idents for the comparisons.
+
+```{r}
+Trial.combined.markers <- FindAllMarkers(Trial.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+Create csv files for the up regulated genes of different cluster comparisons for TopGo analyses with Metascape.
+
+```{r}
+write.csv(subset(Trial.combined.markers, Trial.combined.markers$cluster == "Control"),"~/yard/R_Projects/Published_Data/Integrated_Published_Data/GlastCreERT2_tdTomato_YAP5SA_MGs_48hours_post_NMDA_Markers_Control_Clusters.csv", row.names = TRUE)
+write.csv(subset(Trial.combined.markers, Trial.combined.markers$cluster == "YAP5SA"),"~/yard/R_Projects/Published_Data/Integrated_Published_Data/GlastCreERT2_tdTomato_YAP5SA_MGs_48hours_post_NMDA_Markers_YAP5SA_Clusters.csv", row.names = TRUE)
+Trial.combined.markers %>%
+  group_by(cluster) %>%
+  top_n(n = 5, wt = avg_log2FC)
+```
+
+Calculation cell cycle scoring for each cell based on expression of G2/M and S phase markers.
+
+```{r}
+DefaultAssay(Trial.combined) <- "RNA"
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+Trial.combined <- CellCycleScoring(Trial.combined, g2m.features = g2m.genes, s.features = s.genes, set.ident = TRUE)
+# Visualization
+p1 <- DimPlot(Trial.combined, reduction = "umap", group.by = "Phase")
+p2 <- DimPlot(Trial.combined, reduction = "umap", label = TRUE, repel = TRUE)
+p1 + p2
+```
+
+Add Gfap classifier to the metadata that seperates cells containing Gfap within the control and Yap cells.
+
+```{r}
+Idents(object = Trial.combined) <- "Labeled_Clusters"
+poscells <- WhichCells(Trial.combined, expression = Gfap > 0, idents = "Control")
+nutralcells <- WhichCells(Trial.combined, expression = Gfap == 0, idents = "Control")
+poscells2 <- WhichCells(Trial.combined, expression = Gfap > 0, idents = "YAP5SA")
+nutralcells2 <- WhichCells(Trial.combined, expression = Gfap == 0, idents = "YAP5SA")
+Trial.combined$Seperated_Gfap_exp<- ifelse(colnames(Trial.combined) %in% poscells, "Control_Pos", ifelse(colnames(Trial.combined) %in% nutralcells, "Control_Neg", ifelse(colnames(Trial.combined) %in% poscells2, "YAP5SA_Pos", "YAP5SA_Neg")))
+```
+
+Upregulated genes can then be calculated for the created metadata.
+
+```{r}
+Idents(object = Trial.combined) <- "Seperated_Gfap_exp"
+Trial.combined.markers_Seperated_Gfap <- FindAllMarkers(Trial.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+Create csv files for the up regulated genes of different cluster comparisons for TopGo analyses with Metascape.
+
+```{r}
+write.csv(subset(Trial.combined.markers_Seperated_Gfap, Trial.combined.markers_Seperated_Gfap$cluster == "YAP5SA_Pos"),"~/yard/R_Projects/Published_Data/Integrated_Published_Data/YAP5SA_Gfap_Positive.csv", row.names = TRUE)
+write.csv(subset(Trial.combined.markers_Seperated_Gfap, Trial.combined.markers_Seperated_Gfap$cluster == "YAP5SA_Neg"),"~/yard/R_Projects/Published_Data/Integrated_Published_Data/YAP5SA_Gfap_Negative.csv", row.names = TRUE)
+write.csv(subset(Trial.combined.markers_Seperated_Gfap, Trial.combined.markers_Seperated_Gfap$cluster == "Control_Pos"),"~/yard/R_Projects/Published_Data/Integrated_Published_Data/Control_Gfap_Positive.csv", row.names = TRUE)
+write.csv(subset(Trial.combined.markers_Seperated_Gfap, Trial.combined.markers_Seperated_Gfap$cluster == "Control_Neg"),"~/yard/R_Projects/Published_Data/Integrated_Published_Data/Control_Gfap_Negative.csv", row.names = TRUE)
+```
+
+```{r}
+DimPlot(Trial.combined, reduction = "umap", group.by = "Seperated_Gfap_exp")
+```
+
+Create objects associated with the ShinyCell package to display for continues lab use displayed on the the lab server. Remove or alter trials of metadata within each Seurat object for ease of use on the shiny app.
+
+```{r}
+#Configuration for colors/order/present data within the shiny app
+scConf1 = createConfig(Trial.combined)
+scConf1 = delMeta(scConf1, c("integrated_snn_res.0.5", "old.ident"))
+scConf1 = modMetaName(scConf1, meta.to.mod = c("nCount_RNA", "nFeature_RNA", "percent.mt", "seurat_clusters"), 
+                      new.name = c("No. UMIs", "No. detected genes",
+                                   "% MT genes", "Clusters"))
+scConf1 = modColours(scConf1, meta.to.mod = "orig.ident", 
+                     new.colours= c("black", "darkorange", "blue"))
+```
+```{r}
+#Shiny File Creation
+makeShinyFiles(Trial.combined, scConf1, gex.assay = "RNA", gex.slot = "data",
+               gene.mapping = TRUE, shiny.prefix = "Integrated_Samples_Rho_Gnat1_Removal",
+               shiny.dir = "PublishedData/",
+               default.gene1 = "Gmnn", default.gene2 = "Gfap",
+               default.multigene = c("Gmnn","Glul","Gfap","Sox9",
+                                     "Lhx2","Lats1","Lats2","Ccnd1","Vsx2"),
+               default.dimred = c("UMAP_1", "UMAP_2"))
+```
+
+```{r}
+# Second configuration for data
+scConf2 = createConfig(Hippo_Pathway_Study_better_QC.combined_Removal.combined)
+scConf2 = delMeta(scConf2, c("integrated_snn_res.0.5", "old.ident"))
+scConf2 = modMetaName(scConf2, meta.to.mod = c("nCount_RNA", "nFeature_RNA", "percent.mt", "seurat_clusters"), 
+                      new.name = c("No. UMIs", "No. detected genes",
+                                   "% MT genes", "Clusters"))
+scConf2 = modColours(scConf2, meta.to.mod = "orig.ident", 
+                     new.colours= c("black", "darkorange", "blue"))
+```
+```{r}
+#Shiny File Creation 2
+makeShinyFiles(Hippo_Pathway_Study_better_QC.combined_Removal.combined, scConf2, gex.assay = "RNA", gex.slot = "data",
+               gene.mapping = TRUE, shiny.prefix = "Integrated_Sampling_Possible_Rod_Doublets",
+               shiny.dir = "PublishedData/",
+               default.gene1 = "Gmnn", default.gene2 = "Aurkb",
+               default.multigene = c("Gmnn","Aurkb","Glul","Gfap","Sox9",
+                                     "Lhx2","Lats1","Lats2","Ccnd1",
+                                     "Vsx2"),
+               default.dimred = c("UMAP_1", "UMAP_2"))
+```
+
+Finalize the app with all of the associated shiny files for the experiment.
+
+```{r}
+#Creation of Shiny App for Server
+makeShinyCodesMulti(
+  shiny.title = "GlastCreERT2_tdTomato_YAP5SA-MGs_48hours_post-NMDA", shiny.footnotes = "none",
+  shiny.prefix = c("Integrated_Samples_Rho_Gnat1_Removal", "Integrated_Sampling_Possible_Rod_Doublets"),
+  shiny.headers = c("Integrated_Samples_Rho_Gnat1_Removal", "Integrated_Sampling_Possible_Rod_Doublets"), 
+  shiny.dir = "PublishedData/") 
+```
+
+
+Move or copy the shiny app using the command prompt to the shiny server file on the server for consistent access. 
+
+Code example: 
+sudo cp -r "Path_to_Shiny_app_folder" /srv/shiny-server
+
