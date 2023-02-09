@@ -13,7 +13,7 @@ Packages <- c("dplyr", "ggplot2", "Seurat", "ShinyCell", "intrinsicDimension")
 lapply(Packages, library, character.only = TRUE)
 ```
 
-Create Seurat objects that remove removes feature that are seen in less then 3 cells and cells with less then 200 features. This removes reads that are not substantial.
+Create Seurat objects that removes features that are seen in less then 3 cells and cells with less then 200 features. This removes reads that are not substantial.
 
 ```{r}
 ## Starting Seurat objects
